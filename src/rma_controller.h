@@ -58,6 +58,8 @@ namespace effort_controllers
 		KDL::JntArray dq_;
 		KDL::JntArray v_;
 
+		Eigen::VectorXd qLimMax;
+		Eigen::VectorXd qLimMin;
 		//remover
 		KDL::JntArray qr_;
 		KDL::JntArray dqr_;
@@ -69,7 +71,6 @@ namespace effort_controllers
 		
 		KDL::Frame x_;
 		
-		KDL::Frame xr_;
 		KDL::FrameVel dx_;
 		KDL::FrameVel dxr_;
 		KDL::FrameAcc ddxr_;
@@ -78,6 +79,8 @@ namespace effort_controllers
 		KDL::JntArray torque_;
 		
 		KDL::Wrenches fext_;
+
+		Eigen::MatrixXd Gv;
 		
 		Eigen::Matrix<double,6,6> Kp_;
 		Eigen::Matrix<double,6,6> Kd_;
@@ -88,6 +91,10 @@ namespace effort_controllers
 		Eigen::MatrixXd Mo;
 		double gamma_, alpha_, beta_;
 		double dgamma_, dalpha_, dbeta_;
+
+		//coisas inversa
+		Eigen::VectorXd hGradient;
+		Eigen::VectorXd hGradientLast;
 
 		Eigen::Matrix<double,6,1> ddxr, dxr, xr;
 		//TODO CB function
@@ -101,7 +108,9 @@ namespace effort_controllers
 		void starting(const ros::Time& time);
 		void update(const ros::Time& time,const ros::Duration& duration);
 		template <class T>
-		Eigen::MatrixXd invertMatrixSVD(T tempM);
+		Eigen::MatrixXd invertMatrixSVD(T tempM, double limit);
+		void mRotation2Matrix(KDL::Rotation rot, Eigen::MatrixXd &matrix);
+		void inverseJL(Eigen::MatrixXd jaco, Eigen::MatrixXd &invJaco);
 	};
 }
 #endif
