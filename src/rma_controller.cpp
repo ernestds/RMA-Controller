@@ -150,6 +150,8 @@ bool RMAController::init(hardware_interface::EffortJointInterface *hw, ros::Node
 	v_.resize(nJoints_);
 	qvel_.resize(nJoints_);
 
+	hGradient.resize(nJoints_);
+	hGradientLast.resize(nJoints_);
 	//remover
 	qr_.resize(nJoints_);
 	dqr_.resize(nJoints_);
@@ -198,6 +200,12 @@ void RMAController::starting(const ros::Time &time)
 		//ROS_ERROR("Kkkk");
 	}
 
+	for(int i=0;i<nJoints_;i++){
+		hGradientLast(i)=(pow(qLimMax(i)-qLimMin(i),2)*(2*q_(i)-qLimMax(i)-qLimMin(i)))
+			/(4*pow(qLimMax(i)-q_(i),2)*pow(q_(i)-qLimMin(i),2));
+
+	}
+
 	if ((fkSolverPos_->JntToCart(q_, x_)) < 0)
 	{
 		ROS_ERROR("KDL forward kinematics solver failed.");
@@ -224,11 +232,13 @@ void RMAController::starting(const ros::Time &time)
 	}
 	ddxr << 0, 0, 0, 0, 0, 0;
 	dxr << 0, 0, 0, 0, 0, 0;
-	xr << 0, 0, 0, 0, 0, 0;
+	//xr << 0, 0, 0, 0, 0, 0;
 	xo_.head(3) << x_.p.data[0], x_.p.data[1], x_.p.data[2];
+	xr.head(3) = xo_.head(3);
 	Mo = (Eigen::MatrixXd(3, 3) << x_.M.data[0], x_.M.data[1], x_.M.data[2],
 						  x_.M.data[3], x_.M.data[4], x_.M.data[5],
 						  x_.M.data[6], x_.M.data[7], x_.M.data[8]).finished();
+	Mr = Mo;
 	//qvel_.q.data.Zero();
 	//qvel_.qdot.data.Zero();
 
@@ -256,7 +266,8 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	//xr.head(3) << xo_(0) + std::cos(ros::Time::now().toSec())*0.2, xo_(1) + std::sin(ros::Time::now().toSec())*0.2, xo_(2) - 0.2;
 	//xr.head(3) << 0.0132222, 0.0762601, 0.35326405;
 	xr.head(3) << xo_(0)+0.05, xo_(1)+0.1, xo_(2)-0.3;
-	Mr = Mo;
+	
+	D(cout<<"Xr: \n"<<xr<<"Mr: \n"<<Mr<<"\n");
 	for (unsigned int i = 0; i < nJoints_; i++)
 	{
 		q_(i) = joints_[i].getPosition();
@@ -321,7 +332,7 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	
 	KDL::JntArray qll;
 	qll.resize(nJoints_);
-	Eigen::VectorXd erpy(6);
+	Eigen::VectorXd erpy = VectorXd::Zero(6);
 	erpy.head(3) = xr.head(3) - xrpy_.head(3);
 	
 	Eigen::Vector3d m = M.col(0);
@@ -330,32 +341,29 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	Eigen::Vector3d mr = Mr.col(0);
 	Eigen::Vector3d sr = Mr.col(1);
 	Eigen::Vector3d ar = Mr.col(2);
-	erpy.tail(3) = m.cross(mr) + s.cross(sr) + a.cross(ar);
+	//erpy.tail(3) = m.cross(mr) + s.cross(sr) + a.cross(ar);
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
 	double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
 
-	Eigen::VectorXd invTemp(7);
+	Eigen::MatrixXd invTemp(nJoints_,nJoints_);
 	//qcUpper << 1,1,1,1,1,1,1;
 	//qcLower << 1,1,1,1,1,1,1;
-	invTemp = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
-	for (int i=0; i < 7; i++)
-	{
-		double valueAtQc = 10;
-		double offsetUpper = 0.1;
-		double qoUpper = qLimMax(i) - offsetUpper;
-		double bsUpper = std::log(valueAtQc) / offsetUpper;
+	inverseJL(Ja,invTemp);
+	MatrixXd inverseJa;
+	inverseJL(Ja,inverseJa);
+	
+	Gv = MatrixXd::Zero(nJoints_,nJoints_);
+	for(int i=0;i<nJoints_;i++)
+		Gv.diagonal()(i) = 1;
+	
+	VectorXd dqc_ = inverseJa*(dxr + Kp_*erpy); //dqc=J'(dxr+Kp*e)
+	VectorXd csi_ = Gv*(dqc_-dqtemp_); 
+	MatrixXd N =  Matrix<double, 7, 7>::Identity() - inverseJa*Ja;
+	VectorXd av = inverseJa*(ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa*dqtemp_)+N*csi_;
+	VectorXd avc = av + Gv*(dqc_ - dqtemp_);
 
-
-		double nUpper = std::exp(bsUpper * (q_(i) - qoUpper));
-
-		double offsetLower = -0.1;
-		double qoLower = qLimMin(i) + offsetLower;
-		double bsLower = std::log(valueAtQc) / offsetLower;
-
-
-		double nLower = std::exp(bsLower * (q_(i) - qoLower));
-		qll.data(i) = invTemp(i) - invTemp(i) * (nLower + nUpper);
-	}
+	// invTemp *=((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
+	qll.data = avc;
 	
 
 	if (idsolver_->CartToJnt(q_, dq_, qll, fext_, torque_) < 0)
@@ -366,7 +374,7 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 }
 
 template <class T>
-Eigen::MatrixXd RMAController::invertMatrixSVD(T tempM)
+Eigen::MatrixXd RMAController::invertMatrixSVD(T tempM, double limit)
 {
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(tempM, Eigen::ComputeFullV | Eigen::ComputeFullU | Eigen::FullPivHouseholderQRPreconditioner);
 
@@ -375,15 +383,38 @@ Eigen::MatrixXd RMAController::invertMatrixSVD(T tempM)
 	Eigen::MatrixXd S = Eigen::MatrixXd::Zero(tempM.rows(), tempM.cols());
 	S.diagonal() = svd.singularValues();
 	Eigen::MatrixXd Sl = S.transpose();
+	cout << "diag S" << endl << S.diagonal()  << endl;
 	for (int i = 0; i < Sl.rows(); i++)
 		for (int j = 0; j < Sl.cols(); j++)
-			if ((i == j) && (S(i, j) > 0.05))
+			if ((i == j) && (S(i, j) > limit))
 				Sl(j, i) = 1 / S(i, j);
 	// std::cout << U << std::endl << V << std::endl << S <<  std::endl;
 	// V*Sl*U'
 	Eigen::MatrixXd invJ_ = V * Sl * U.transpose();
 	return invJ_;
 	//std::cout << "inverso\n:" << invJ_ << std::endl;
+}
+
+void RMAController::inverseJL(Eigen::MatrixXd jaco, Eigen::MatrixXd &invJaco){
+	Eigen::MatrixXd wJL = MatrixXd::Zero(nJoints_,nJoints_);
+	for(int i=0;i<nJoints_;i++){
+		hGradient(i)=(pow(qLimMax(i)-qLimMin(i),2)*(2*q_(i)-qLimMax(i)-qLimMin(i)))
+			/(4*pow(qLimMax(i)-q_(i),2)*pow(q_(i)-qLimMin(i),2));
+		if((abs(hGradient(i))-abs(hGradientLast(i)))>=0)
+			wJL.diagonal()(i)=1.0+abs(hGradient(i));
+		else
+			wJL.diagonal()(i)=1.0;
+		hGradientLast(i)=hGradient(i);
+	}
+	//invJaco=(wJL.inverse()*jaco.transpose()*jaco).inverse()*wJL.inverse()*jaco.transpose();
+	//(wJL.inverse()*jaco.transpose()*jaco).inverse()*wJL.inverse()*jaco.transpose();
+	//invJaco=wJL.inverse()*jaco.transpose()*(jaco*wJL.inverse()*jaco.transpose()).inverse();
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(wJL);
+	double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
+	cout << "cond wJL" << endl << cond << endl;
+	//if (cond > 100)
+	//while(true);
+	invJaco=invertMatrixSVD(wJL,0.99)*jaco.transpose()*invertMatrixSVD(jaco*wJL.inverse()*jaco.transpose(),0.005);
 }
 
 void RMAController::mRotation2Matrix(KDL::Rotation rot, Eigen::MatrixXd &matrix){
@@ -406,7 +437,8 @@ void RMAController::commandCB(const geometry_msgs::Pose::ConstPtr &command)
 	oz= command->orientation.z;
 	ow= command->orientation.w;
 	refM.Quaternion(ox,oy,oz,ow);
-	mRotation2Matrix(refM,Mo);
+	mRotation2Matrix(refM,Mr);
+	xr.head(3) << px, py, pz;
 	
 }
 } // namespace effort_controllers
