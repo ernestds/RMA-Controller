@@ -329,15 +329,8 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	erpy.tail(3) = m.cross(mr) + s.cross(sr) + a.cross(ar);
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
 	double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
-	if (cond > 100)
-	{
-		//qll.data = Ja.transpose() * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
-		qll.data = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
-	}
-	else
-	{
-		qll.data = Ja.fullPivHouseholderQr().solve((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
-	}
+
+	qll.data = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
 
 	if (idsolver_->CartToJnt(q_, dq_, qll, fext_, torque_) < 0)
 		ROS_ERROR("KDL inverse dynamics solver failed.");
