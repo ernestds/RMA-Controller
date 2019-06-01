@@ -1,1 +1,1 @@
-RMA Controller
+ROS Package for RMA Controller
