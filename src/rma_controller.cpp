@@ -15,13 +15,14 @@
 #include <math.h>
 using std::cout;
 using std::endl;
+using namespace Eigen;
 //TODO jacobian
 //TODO initialize jacobian
 
 namespace effort_controllers
 {
 //TODO verify this
-RMAController::RMAController(void) : q_(0), dq_(0), v_(0), xr_(), dxr_(), ddxr_(), torque_(0), fext_(0), jac_(0), djac_(0), vi_()
+RMAController::RMAController(void) : q_(0), dq_(0), v_(0), dxr_(), ddxr_(), torque_(0), fext_(0), jac_(0), djac_(0), vi_()
 {
 }
 RMAController::~RMAController(void)
@@ -177,7 +178,8 @@ bool RMAController::init(hardware_interface::EffortJointInterface *hw, ros::Node
 		return false;
 	}
 	Kd_ = Eigen::Map<Eigen::Matrix<double, 6, 6>>(KdVec.data()).transpose();
-
+	qLimMax = (VectorXd(7) << 2.6, 2, 2.8,3.1,1.24, 1.57,3.0).finished();
+	qLimMin = (VectorXd(7) << -2.6, -2, -2.8,-0.9,-4.76,- 1.57,-3.0).finished();
 	return true;
 }
 
@@ -224,8 +226,8 @@ void RMAController::starting(const ros::Time &time)
 	dxr << 0, 0, 0, 0, 0, 0;
 	xr << 0, 0, 0, 0, 0, 0;
 	xo_.head(3) << x_.p.data[0], x_.p.data[1], x_.p.data[2];
-	Mo = (Eigen::MatrixXd(3, 3) << x_.M.data[0], x_.M.data[1], xr_.M.data[2],
-						  xr_.M.data[3], x_.M.data[4], x_.M.data[5],
+	Mo = (Eigen::MatrixXd(3, 3) << x_.M.data[0], x_.M.data[1], x_.M.data[2],
+						  x_.M.data[3], x_.M.data[4], x_.M.data[5],
 						  x_.M.data[6], x_.M.data[7], x_.M.data[8]).finished();
 	//qvel_.q.data.Zero();
 	//qvel_.qdot.data.Zero();
@@ -252,7 +254,8 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 {
 	
 	//xr.head(3) << xo_(0) + std::cos(ros::Time::now().toSec())*0.2, xo_(1) + std::sin(ros::Time::now().toSec())*0.2, xo_(2) - 0.2;
-	xr.head(3) << 0.0132222, 0.0762601, 0.35326405;
+	//xr.head(3) << 0.0132222, 0.0762601, 0.35326405;
+	xr.head(3) << xo_(0)+0.05, xo_(1)+0.1, xo_(2)-0.3;
 	Mr = Mo;
 	for (unsigned int i = 0; i < nJoints_; i++)
 	{
@@ -279,6 +282,7 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 		ROS_ERROR("KDL forward kinematics solver failed.");
 	}
 	
+	D(cout<<"X: "<<x_.p.data[0]<<" "<<x_.p.data[1]<<" "<<x_.p.data[2]<<"\n");
 
 	Eigen::MatrixXd J = jac_.data; 
 	Eigen::MatrixXd dJ = djac_.data; 
@@ -330,32 +334,27 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
 	double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
 
-	VectorXd temp(7);
-	VectorXd qcUpper(7), qcLower(7);
+	Eigen::VectorXd invTemp(7);
 	//qcUpper << 1,1,1,1,1,1,1;
 	//qcLower << 1,1,1,1,1,1,1;
-	temp = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
-	for (int i; i < 7; i++)
+	invTemp = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
+	for (int i=0; i < 7; i++)
 	{
 		double valueAtQc = 10;
-		double offset = 0.1;
-		double qo = qcUpper(i) - offset;
-		a = std::log(valueAtQc) / offset;
+		double offsetUpper = 0.1;
+		double qoUpper = qLimMax(i) - offsetUpper;
+		double bsUpper = std::log(valueAtQc) / offsetUpper;
 
 
-		double n = std::exp(a * (q_(i) - qo));
-		qll.data(i) = temp(i) - temp(i) * n;
-	}
-	for (int i; i < 7; i++)
-	{
-		double valueAtQc = 10;
-		double offset = -0.1;
-		double qo = qcLower(i) + offset;
-		a = std::log(valueAtQc) / offset;
+		double nUpper = std::exp(bsUpper * (q_(i) - qoUpper));
+
+		double offsetLower = -0.1;
+		double qoLower = qLimMin(i) + offsetLower;
+		double bsLower = std::log(valueAtQc) / offsetLower;
 
 
-		double n = std::exp(a * (q_(i) - qo));
-		qll.data(i) = temp(i) - temp(i) * n;
+		double nLower = std::exp(bsLower * (q_(i) - qoLower));
+		qll.data(i) = invTemp(i) - invTemp(i) * (nLower + nUpper);
 	}
 	
 
@@ -376,7 +375,6 @@ Eigen::MatrixXd RMAController::invertMatrixSVD(T tempM)
 	Eigen::MatrixXd S = Eigen::MatrixXd::Zero(tempM.rows(), tempM.cols());
 	S.diagonal() = svd.singularValues();
 	Eigen::MatrixXd Sl = S.transpose();
-	cout << S << endl;
 	for (int i = 0; i < Sl.rows(); i++)
 		for (int j = 0; j < Sl.cols(); j++)
 			if ((i == j) && (S(i, j) > 0.05))
@@ -388,9 +386,28 @@ Eigen::MatrixXd RMAController::invertMatrixSVD(T tempM)
 	//std::cout << "inverso\n:" << invJ_ << std::endl;
 }
 
+void RMAController::mRotation2Matrix(KDL::Rotation rot, Eigen::MatrixXd &matrix){
+		matrix = (Eigen::MatrixXd(3,3) << 
+		rot.data[0], rot.data[1], rot.data[2], 
+		rot.data[3], rot.data[4], rot.data[5], 
+		rot.data[6], rot.data[7], rot.data[8]).finished();
+	}
+
 void RMAController::commandCB(const geometry_msgs::Pose::ConstPtr &command)
 {
-	//TODO CB
+	float px, py, pz;
+	float ox, oy, oz, ow;
+	KDL::Rotation refM;
+	px= command->position.x;
+	py= command->position.y;
+	pz= command->position.z;
+	ox= command->orientation.x;
+	oy= command->orientation.y;
+	oz= command->orientation.z;
+	ow= command->orientation.w;
+	refM.Quaternion(ox,oy,oz,ow);
+	mRotation2Matrix(refM,Mo);
+	
 }
 } // namespace effort_controllers
 PLUGINLIB_EXPORT_CLASS(effort_controllers::RMAController,

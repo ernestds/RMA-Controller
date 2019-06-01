@@ -3,7 +3,7 @@ project(rma_controller)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
-set(CMAKE_REQUIRED_FLAGS -std=c++17)
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -13,8 +13,10 @@ find_package(catkin REQUIRED COMPONENTS
   controller_manager
   kdl_parser
 # orocos_kdl
+  roscpp
   std_msgs
   geometry_msgs
+  trajectory_msgs
   urdf
 )
 
@@ -113,7 +115,7 @@ find_package(Eigen REQUIRED)
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES rma_controller
-   CATKIN_DEPENDS controller_interface controller_manager kdl_parser std_msgs urdf
+   CATKIN_DEPENDS controller_interface controller_manager kdl_parser roscpp std_msgs geometry_msgs trajectory_msgs urdf
    #DEPENDS orocos_kdl 
 #  DEPENDS Eigen
 )
@@ -125,16 +127,16 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+ include
   ${catkin_INCLUDE_DIRS}
 # TODO: Check names of system library include directories (Eigen)
   ${Eigen_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
-  add_library(${PROJECT_NAME}
-    src/rma_controller.cpp
-  )
+add_library(${PROJECT_NAME}
+   src/rma_controller.cpp
+)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -157,10 +159,10 @@ include_directories(
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-  target_link_libraries(${PROJECT_NAME}
-    ${catkin_LIBRARIES}
-    ${Eigen_LIBRARIES}
-  )
+target_link_libraries(${PROJECT_NAME}
+   ${catkin_LIBRARIES}
+   ${Eigen_LIBRARIES}
+)
 
 #############
 ## Install ##
@@ -177,11 +179,11 @@ include_directories(
 # )
 
 ## Mark executables and/or libraries for installation
- install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME}
    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-  )
+)
 
 ## Mark cpp header files for installation
 # install(DIRECTORY include/${PROJECT_NAME}/

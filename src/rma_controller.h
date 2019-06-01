@@ -58,6 +58,8 @@ namespace effort_controllers
 		KDL::JntArray dq_;
 		KDL::JntArray v_;
 
+		Eigen::VectorXd qLimMax;
+		Eigen::VectorXd qLimMin;
 		//remover
 		KDL::JntArray qr_;
 		KDL::JntArray dqr_;
@@ -69,7 +71,6 @@ namespace effort_controllers
 		
 		KDL::Frame x_;
 		
-		KDL::Frame xr_;
 		KDL::FrameVel dx_;
 		KDL::FrameVel dxr_;
 		KDL::FrameAcc ddxr_;
@@ -102,6 +103,7 @@ namespace effort_controllers
 		void update(const ros::Time& time,const ros::Duration& duration);
 		template <class T>
 		Eigen::MatrixXd invertMatrixSVD(T tempM);
+		void mRotation2Matrix(KDL::Rotation rot, Eigen::MatrixXd &matrix);
 	};
 }
 #endif
