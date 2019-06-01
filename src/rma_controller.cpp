@@ -330,7 +330,34 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
 	double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
 
-	qll.data = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
+	VectorXd temp(7);
+	VectorXd qcUpper(7), qcLower(7);
+	//qcUpper << 1,1,1,1,1,1,1;
+	//qcLower << 1,1,1,1,1,1,1;
+	temp = invertMatrixSVD(Ja) * ((ddxr + Kd_ * (dxr - dxrpy_) + Kp_ * erpy - dJa * dqtemp_));
+	for (int i; i < 7; i++)
+	{
+		double valueAtQc = 10;
+		double offset = 0.1;
+		double qo = qcUpper(i) - offset;
+		a = std::log(valueAtQc) / offset;
+
+
+		double n = std::exp(a * (q_(i) - qo));
+		qll.data(i) = temp(i) - temp(i) * n;
+	}
+	for (int i; i < 7; i++)
+	{
+		double valueAtQc = 10;
+		double offset = 0.1;
+		double qo = qcLower(i) + offset;
+		a = std::log(valueAtQc) / offset;
+
+
+		double n = std::exp(a * (q_(i) - qo));
+		qll.data(i) = temp(i) - temp(i) * n;
+	}
+	
 
 	if (idsolver_->CartToJnt(q_, dq_, qll, fext_, torque_) < 0)
 		ROS_ERROR("KDL inverse dynamics solver failed.");
