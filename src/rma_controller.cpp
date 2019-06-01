@@ -349,7 +349,7 @@ void RMAController::update(const ros::Time &time, const ros::Duration &duration)
 	for (int i; i < 7; i++)
 	{
 		double valueAtQc = 10;
-		double offset = 0.1;
+		double offset = -0.1;
 		double qo = qcLower(i) + offset;
 		a = std::log(valueAtQc) / offset;
 
