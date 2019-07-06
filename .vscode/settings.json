@@ -48,7 +48,7 @@
         "typeindex": "cpp",
         "typeinfo": "cpp",
         "utility": "cpp",
-        "optional": "cpp"
-    },
-    "ros.distro": "melodic"
+        "optional": "cpp",
+        "svd": "cpp"
+    }
 }
