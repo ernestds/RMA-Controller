@@ -1,0 +1,142 @@
+Indicate here alterations made and alterations yet needed to
+implement.
+
+TODO
+* Add CB for command msgs (geometry and std)
+* 
+* Remove computed torque controller related code and dependencies
+LOG (replace package.xml and CMakeLists.txtby the ones present 
+in folder old_)
+
+1 - added trajactory_msgs to package. it can now be used for 
+debbuging with the computed torque controller control law. 
+Remove when finished (replace package.xml and CMakeLists.txt
+by the ones present in folder old_, remove related CB function
+and code)
+
+2 - 
+
+
+q INICIAL
+2.13758e-07 0 0 0 0 0 0 
+
+Robô esticado pra cima
+Posição: 
+0.219995
+0.14
+1.256
+Orientação: 
+5.46636e-10
+-3.82115e-05
+7.20747e-08
+1
+RPY: 
+1.08776e-09
+-7.64229e-05
+1.44149e-07
+
+Home
+Posição: 
+0.0030341
+0.151815
+0.36326
+
+Orientação: 
+-0.0102792
+0.546323
+0.00712295
+0.837481
+
+***************************************************************************************
+eu fiz aqui um treco q qndo a ivnersa falha ele usa o controle do walter
+
+if (jacanal_.data.fullPivLu().isInvertible()){
+			qll.data = jacanal_.data.fullPivLu().solve( (xrll + Kd_*(xrl - dxrpy_)/5 + Kp_*erpy/5 - djacanal_.data * dqtemp_));
+			notFailedInverses++;
+			}
+		else {
+			
+			qll.data = ddqr_.data+Kptemp*(qr_.data-q_.data)+Kdtemp*(dqr_.data-dq_.data);
+			failedInverses++;
+		}
+**************************************************************************************
+[13:45, 26/5/2019] Ernesto: isso daqui funciona mais ou mneos
+[13:45, 26/5/2019] Ernesto: tipo ele acelera
+[13:45, 26/5/2019] Ernesto: pra baixo
+[13:45, 26/5/2019] Ernesto: dai acelera pra cima
+[13:45, 26/5/2019] Ernesto: fica parado
+[13:45, 26/5/2019] Ernesto: um pouco pra baixo
+[13:45, 26/5/2019] Ernesto: daí começa a mover na direçao x certinho
+[13:45, 26/5/2019] Ernesto: de repente tem um aneurisma e cai
+[13:46, 26/5/2019] Ernesto: tipo tem mt cara da jacobiana em algum momento estar dando mt errada
+[13:46, 26/5/2019] Ernesto: a inversa
+
+if (ros::Time::now().toSec()<1)
+			xrll << 0,0,-0.05,0,0,0;
+		else if((ros::Time::now().toSec()<3)&&(ros::Time::now().toSec()>2))
+			xrll << 0,0,0.05,0,0,0;
+		else if ((ros::Time::now().toSec()>10))
+			xrll << 0.05*std::sin(2*ros::Time::now().toSec()),0,0,0,0,0;
+		else xrll << 0,0,0,0,0,0;
+
+****************************************************************************************
+The condition number a measure of how close a matrix is to being singular: a matrix with large 
+condition numberis nearly singular, whereas a matrixwith condition number close to 1 is far from 
+being singular. It is obvious from the definition that a nonsingular matrixand its inverse 
+have the samecondition numbe
+****************************************************************************************
+fazendo isso ele fica mt perto de funcionar
+ele buga completamente se tiver colisao e limite de junta
+
+Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
+		double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size()-1);
+		if (cond > 100)
+			{
+				qll.data = lastqll;
+				qr_.data = q_.data;
+				qr_.data(2) += 0.2;
+				qr_.data(3) += 0.2;
+				qr_.data(5) += 0.2;
+				v_.data=ddqr_.data+Kp_joints*(qr_.data-q_.data)+Kd_joints*(dqr_.data-dq_.data);
+				if(idsolver_->CartToJnt(q_,dq_,v_,fext_,torque_) < 0)
+		        	ROS_ERROR("KDL inverse dynamics solver failed.");
+			}
+		else
+		{
+			qll.data = Ja.fullPivHouseholderQr().solve( (xrll + Kd_*(xrl - dxrpy_) + Kp_*erpy - dJa * dqtemp_));
+			lastqll = qll.data;
+			if(idsolver_->CartToJnt(q_,dq_,qll,fext_,torque_) < 0)
+				ROS_ERROR("KDL inverse dynamics solver failed.");
+			D(std::cout<<"RMAC torque\n";
+			std::cout<< torque_.data<<"\n");
+		}Eigen::JacobiSVD<Eigen::MatrixXd> svd(Ja);
+		double cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size()-1);
+		if (cond > 100)
+			{
+				qll.data = lastqll;
+				qr_.data = q_.data;
+				qr_.data(2) += 0.2;
+				qr_.data(3) += 0.2;
+				qr_.data(5) += 0.2;
+				v_.data=ddqr_.data+Kp_joints*(qr_.data-q_.data)+Kd_joints*(dqr_.data-dq_.data);
+				if(idsolver_->CartToJnt(q_,dq_,v_,fext_,torque_) < 0)
+		        	ROS_ERROR("KDL inverse dynamics solver failed.");
+			}
+		else
+		{
+			qll.data = Ja.fullPivHouseholderQr().solve( (xrll + Kd_*(xrl - dxrpy_) + Kp_*erpy - dJa * dqtemp_));
+			lastqll = qll.data;
+			if(idsolver_->CartToJnt(q_,dq_,qll,fext_,torque_) < 0)
+				ROS_ERROR("KDL inverse dynamics solver failed.");
+			D(std::cout<<"RMAC torque\n";
+			std::cout<< torque_.data<<"\n");
+		}
+*****************************************************************************************
+[22:11, 27/5/2019] Ernesto: no codigo tem um Kp set to zero por algum motivo
+[22:11, 27/5/2019] Ernesto: tem q tirar
+[22:11, 27/5/2019] Ernesto: e outra
+[22:11, 27/5/2019] Ernesto: fazer o condition da matrix
+[22:11, 27/5/2019] Ernesto: qndo der menor q 100 faz a inversa normal
+[22:11, 27/5/2019] Ernesto: qndo der maior usa a transposta no lugar da inversa
+https://studywolf.wordpress.com/2013/10/10/robot-control-part-6-handling-singularities/
+
